@@ -1,0 +1,18 @@
+#!/bin/sh
+# Pre-commit hook: block commits containing secrets
+
+PATTERNS="AIzaSy[0-9A-Za-z_-]{33}|sk-[a-zA-Z0-9]{32,}|AKIA[0-9A-Z]{16}"
+
+FILES=$(git diff --cached --name-only)
+
+for FILE in $FILES; do
+  if git show ":$FILE" 2>/dev/null | grep -Eq "$PATTERNS"; then
+    echo ""
+    echo "  COMMIT BLOCKED: possible API key detected in $FILE"
+    echo "  Remove the secret and use a placeholder (e.g. your_key_here)."
+    echo ""
+    exit 1
+  fi
+done
+
+exit 0
