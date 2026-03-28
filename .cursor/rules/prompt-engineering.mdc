@@ -1,0 +1,177 @@
+---
+description: Agente responsável pela criação, evolução e avaliação de prompts para a LLM (Claude/Anthropic)
+globs: ["backend/app/services/llm_service.py", "backend/app/prompts/**/*.py", "backend/app/prompts/**/*.txt"]
+alwaysApply: false
+---
+
+# Agente — Prompt Engineering (LLM)
+
+## Contexto do Projeto
+App de tradução com sugestões de melhoria de texto.
+A LLM usada é Claude (Anthropic). O objetivo do prompt é analisar
+o texto do usuário e retornar uma resposta estruturada em JSON com
+tradução principal, alternativas, tom detectado, avisos e confiança.
+
+## Stack LLM
+- **Modelo:** claude-sonnet-4-20250514 (padrão) — troque para claude-haiku para testes rápidos
+- **SDK:** `anthropic` (Python oficial)
+- **Output:** sempre JSON estruturado via system prompt
+- **Temperatura:** 0.3 para traduções (mais determinístico), 0.7 para sugestões criativas
+
+## Estrutura de Pastas de Prompts
+```
+backend/app/prompts/
+├── __init__.py
+├── translate.py          # prompt principal de tradução
+├── improve.py            # prompt de melhoria de estilo (futuro)
+└── evaluate.py           # prompt de avaliação de qualidade (futuro)
+```
+
+## Estrutura do Prompt Principal
+
+### System Prompt — regras fixas do comportamento da LLM
+```python
+TRANSLATE_SYSTEM_PROMPT = """
+Você é um especialista em tradução e linguística aplicada.
+Seu papel é analisar textos e fornecer traduções precisas com contexto cultural.
+
+REGRAS OBRIGATÓRIAS:
+1. Sempre responda EXCLUSIVAMENTE com JSON válido — sem texto antes ou depois
+2. Nunca adicione comentários, explicações ou markdown fora do JSON
+3. Se o texto de entrada estiver vazio ou for inválido, retorne o JSON de erro padrão
+4. Preserve o significado original — não adicione nem remova informações
+5. Detecte o tom automaticamente mesmo que não seja informado
+
+FORMATO DE RESPOSTA OBRIGATÓRIO:
+{
+  "translated": "string — tradução principal",
+  "alternatives": ["string", "string", "string"],
+  "tone": "formal | informal | technical | neutral",
+  "warnings": ["string — problemas encontrados no texto original"],
+  "confidence": 0.0
+}
+
+FORMATO DE ERRO (quando não for possível traduzir):
+{
+  "error": true,
+  "reason": "string — motivo pelo qual não foi possível traduzir"
+}
+"""
+```
+
+### User Prompt — construção dinâmica
+```python
+def build_translate_prompt(
+    text: str,
+    source_lang: str,
+    target_lang: str
+) -> str:
+    return f"""
+Analise e traduza o texto abaixo.
+
+IDIOMA DE ORIGEM: {source_lang}
+IDIOMA DE DESTINO: {target_lang}
+
+TEXTO:
+\"\"\"
+{text}
+\"\"\"
+
+Lembre-se: responda APENAS com o JSON, sem nenhum texto adicional.
+"""
+```
+
+## Padrão de Chamada à API
+```python
+import anthropic
+import json
+from app.models.response import TranslationSuggestion
+
+client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+async def call_llm(
+    text: str,
+    source_lang: str,
+    target_lang: str
+) -> TranslationSuggestion:
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        temperature=0.3,
+        system=TRANSLATE_SYSTEM_PROMPT,
+        messages=[
+            {
+                "role": "user",
+                "content": build_translate_prompt(text, source_lang, target_lang)
+            }
+        ]
+    )
+
+    raw = message.content[0].text
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # tenta extrair JSON se o modelo incluiu texto extra (fallback)
+        import re
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+        else:
+            raise ValueError("LLM retornou resposta fora do formato esperado")
+
+    return TranslationSuggestion(**data)
+```
+
+## Estratégia de Retry
+```python
+async def call_llm_with_retry(
+    text: str,
+    source_lang: str,
+    target_lang: str,
+    max_attempts: int = 2
+) -> TranslationSuggestion:
+    for attempt in range(max_attempts):
+        try:
+            return await call_llm(text, source_lang, target_lang)
+        except (ValueError, KeyError) as e:
+            if attempt == max_attempts - 1:
+                raise
+            # na segunda tentativa, adiciona instrução extra ao prompt
+            # reforçando o formato JSON
+    raise RuntimeError("Falha após todas as tentativas")
+```
+
+## Regras de Prompt Engineering
+
+- **Nunca use few-shot examples no system prompt** para este caso — aumenta tokens sem ganho relevante em tradução
+- **Sempre instrua o modelo a retornar apenas JSON** — sem markdown, sem texto extra
+- **Temperatura 0.3** para tradução (precisão > criatividade)
+- **Temperatura 0.7** se futuramente implementar sugestões de estilo criativas
+- **max_tokens: 1024** é suficiente — respostas de tradução são curtas
+- **Nunca passe o texto do usuário no system prompt** — sempre no user message
+- **Sanitize o texto** antes de montar o prompt — remova caracteres de controle
+
+## Sanitização de Input
+```python
+import re
+
+def sanitize_text(text: str) -> str:
+    # remove caracteres de controle exceto newline e tab
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    # limita tamanho para controlar custo
+    return text[:5000].strip()
+```
+
+## Estimativa de Custo por Chamada
+| Modelo | Input (1k tokens) | Output (1k tokens) | Custo médio/chamada |
+|---|---|---|---|
+| claude-haiku-4-5 | $0.0008 | $0.004 | ~$0.001 |
+| claude-sonnet-4 | $0.003 | $0.015 | ~$0.004 |
+
+Use Haiku para desenvolvimento e testes. Use Sonnet em produção.
+
+## O que este agente NÃO faz
+- Não gera código de endpoints FastAPI — use o agente de Backend
+- Não gera código do app Electron — use o agente de Frontend
+- Não gera Dockerfile ou configuração GCP — use o agente de Infra

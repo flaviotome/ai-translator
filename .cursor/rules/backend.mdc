@@ -1,0 +1,154 @@
+---
+description: Agente responsável pelo desenvolvimento do backend FastAPI com integração à LLM e deploy no GCP Cloud Run
+globs: ["backend/**/*.py", "backend/**/*.toml", "backend/**/*.env*"]
+alwaysApply: false
+---
+
+# Agente — Backend (FastAPI + GCP)
+
+## Contexto do Projeto
+App de tradução com sugestões de melhoria de texto, similar ao Grammarly.
+O backend é uma API REST construída com FastAPI, hospedada no GCP Cloud Run.
+Ele recebe texto do app desktop (Electron), chama a API da Anthropic (Claude),
+e retorna sugestões estruturadas de tradução e melhoria.
+
+## Stack
+- **Runtime:** Python 3.11+
+- **Framework:** FastAPI com Pydantic v2
+- **LLM:** Anthropic Claude via SDK oficial (`anthropic`)
+- **Cache:** Firestore (como cache de traduções por hash do texto)
+- **Banco de dados:** Firestore (histórico de traduções por usuário)
+- **Autenticação:** GCP Identity Platform (validação de JWT)
+- **Deploy:** GCP Cloud Run via Docker
+- **Gerenciamento de dependências:** Poetry
+
+## Estrutura de Pastas
+```
+backend/
+├── app/
+│   ├── main.py                  # entrypoint FastAPI
+│   ├── core/
+│   │   ├── config.py            # settings via pydantic-settings
+│   │   ├── security.py          # validação JWT do Identity Platform
+│   │   └── exceptions.py        # handlers globais de erro
+│   ├── api/
+│   │   └── v1/
+│   │       ├── router.py        # agrega todos os routers
+│   │       ├── translate.py     # endpoint POST /translate
+│   │       └── history.py       # endpoint GET /history
+│   ├── services/
+│   │   ├── llm_service.py       # chamada à API da Anthropic
+│   │   ├── cache_service.py     # cache via Firestore
+│   │   └── history_service.py   # persistência no Firestore
+│   └── models/
+│       ├── request.py           # modelos de entrada (Pydantic)
+│       └── response.py          # modelos de saída (Pydantic)
+├── tests/
+├── Dockerfile
+├── pyproject.toml
+└── .env.example
+```
+
+## Padrões de Código
+
+### Sempre use tipagem explícita
+```python
+# CORRETO
+async def analyze_text(request: TranslateRequest) -> TranslateResponse:
+    ...
+
+# ERRADO
+async def analyze_text(request):
+    ...
+```
+
+### Models Pydantic v2 para request e response
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
+
+class TranslateRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=5000)
+    source_lang: str = Field(..., example="pt-BR")
+    target_lang: str = Field(..., example="en-US")
+
+class TranslationSuggestion(BaseModel):
+    translated: str
+    alternatives: list[str]
+    tone: Literal["formal", "informal", "technical", "neutral"]
+    warnings: list[str]
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+class TranslateResponse(BaseModel):
+    request_id: str
+    cached: bool
+    result: TranslationSuggestion
+```
+
+### Serviços são sempre async
+```python
+# CORRETO
+async def call_llm(text: str, source: str, target: str) -> TranslationSuggestion:
+    ...
+
+# ERRADO
+def call_llm(text: str, source: str, target: str) -> TranslationSuggestion:
+    ...
+```
+
+### Tratamento de erros com HTTPException
+```python
+from fastapi import HTTPException, status
+
+raise HTTPException(
+    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    detail={"error": "text_too_short", "message": "O texto precisa ter ao menos 1 caractere"}
+)
+```
+
+### Configurações via pydantic-settings (nunca hardcode)
+```python
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    anthropic_api_key: str
+    gcp_project_id: str
+    environment: str = "development"
+
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+```
+
+## Regras de Negócio
+
+- Todo texto recebido deve ser validado antes de ir para a LLM
+- Sempre gere um hash SHA-256 do texto + source_lang + target_lang para usar como chave de cache
+- Consulte o cache no Firestore antes de chamar a LLM
+- Persista toda tradução no histórico do usuário após retornar a resposta (background task)
+- Nunca logue o texto original do usuário — apenas o hash e os metadados
+- Respostas da LLM devem sempre ser parseadas para o modelo Pydantic antes de retornar
+- Se o parse falhar, tente novamente uma vez antes de retornar erro 500
+
+## Padrão de Cache com Firestore
+```python
+import hashlib
+
+def generate_cache_key(text: str, source: str, target: str) -> str:
+    content = f"{text}:{source}:{target}"
+    return hashlib.sha256(content.encode()).hexdigest()
+```
+
+## Endpoints Principais
+
+| Método | Path | Descrição |
+|--------|------|-----------|
+| POST | /v1/translate | Envia texto para análise e tradução |
+| GET | /v1/history | Retorna histórico do usuário autenticado |
+| GET | /health | Health check para o Cloud Run |
+
+## O que este agente NÃO faz
+- Não gera código de infraestrutura (Dockerfile, CI/CD) — use o agente de Infra
+- Não escreve prompts para a LLM — use o agente de Prompt Engineering
+- Não gera código do app desktop — use o agente de Frontend

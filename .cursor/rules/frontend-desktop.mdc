@@ -1,0 +1,196 @@
+---
+description: Agente responsável pelo desenvolvimento do app desktop transparente com Electron e React
+globs: ["desktop/**/*.tsx", "desktop/**/*.ts", "desktop/**/*.css", "desktop/**/*.html"]
+alwaysApply: false
+---
+
+# Agente — Frontend Desktop (Electron + React)
+
+## Contexto do Projeto
+App desktop transparente que flutua sobre qualquer janela do usuário,
+similar ao Grammarly Desktop. O usuário seleciona um texto em qualquer
+aplicativo, o app captura via clipboard, envia para o backend FastAPI,
+e exibe as sugestões de tradução em uma janela flutuante semi-transparente.
+
+## Stack
+- **Framework:** Electron 28+
+- **UI:** React 18 com TypeScript
+- **Estilização:** Tailwind CSS
+- **Estado global:** Zustand
+- **Comunicação com backend:** Axios com interceptors
+- **Comunicação Electron↔React:** IPC (ipcMain / ipcRenderer)
+- **Build:** Electron Forge com Vite
+
+## Estrutura de Pastas
+```
+desktop/
+├── src/
+│   ├── main/                        # processo principal do Electron
+│   │   ├── index.ts                 # entrypoint do Electron
+│   │   ├── windows/
+│   │   │   ├── mainWindow.ts        # janela flutuante transparente
+│   │   │   └── trayWindow.ts        # ícone na bandeja do sistema
+│   │   ├── ipc/
+│   │   │   └── handlers.ts          # handlers IPC (main process)
+│   │   └── clipboard/
+│   │       └── monitor.ts           # monitoramento do clipboard
+│   ├── renderer/                    # processo renderer (React)
+│   │   ├── App.tsx
+│   │   ├── components/
+│   │   │   ├── TranslationPanel/    # painel principal de sugestões
+│   │   │   ├── SuggestionCard/      # card individual de sugestão
+│   │   │   ├── LanguageSelector/    # seletor de idioma origem/destino
+│   │   │   └── LoadingState/        # estado de carregamento
+│   │   ├── store/
+│   │   │   └── translationStore.ts  # estado global com Zustand
+│   │   ├── hooks/
+│   │   │   ├── useClipboard.ts      # hook para eventos do clipboard
+│   │   │   └── useTranslation.ts    # hook para chamada à API
+│   │   └── services/
+│   │       └── api.ts               # cliente HTTP para o backend
+│   └── preload/
+│       └── index.ts                 # bridge segura entre main e renderer
+├── forge.config.ts
+├── vite.config.ts
+└── package.json
+```
+
+## Padrões de Código
+
+### Comunicação entre Main e Renderer SEMPRE via preload
+```typescript
+// preload/index.ts — expõe API segura para o renderer
+import { contextBridge, ipcRenderer } from 'electron'
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  onClipboardChange: (callback: (text: string) => void) =>
+    ipcRenderer.on('clipboard:changed', (_event, text) => callback(text)),
+  analyzeText: (text: string) =>
+    ipcRenderer.invoke('text:analyze', text),
+})
+
+// NUNCA faça isso no renderer:
+// const { ipcRenderer } = require('electron') ← ERRADO, nodeIntegration off
+```
+
+### Janela flutuante transparente
+```typescript
+// main/windows/mainWindow.ts
+import { BrowserWindow } from 'electron'
+
+export function createFloatingWindow(): BrowserWindow {
+  return new BrowserWindow({
+    width: 380,
+    height: 520,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      nodeIntegration: false,      // sempre false
+      contextIsolation: true,      // sempre true
+    },
+  })
+}
+```
+
+### Componentes React com TypeScript estrito
+```typescript
+// CORRETO — props tipadas explicitamente
+interface SuggestionCardProps {
+  translated: string
+  alternatives: string[]
+  tone: 'formal' | 'informal' | 'technical' | 'neutral'
+  confidence: number
+  onCopy: (text: string) => void
+}
+
+export const SuggestionCard: React.FC<SuggestionCardProps> = ({
+  translated,
+  alternatives,
+  tone,
+  confidence,
+  onCopy,
+}) => { ... }
+```
+
+### Estado global com Zustand
+```typescript
+// store/translationStore.ts
+import { create } from 'zustand'
+
+interface TranslationState {
+  isLoading: boolean
+  result: TranslationResult | null
+  error: string | null
+  sourceLang: string
+  targetLang: string
+  analyze: (text: string) => Promise<void>
+  setLanguages: (source: string, target: string) => void
+  reset: () => void
+}
+
+export const useTranslationStore = create<TranslationState>((set, get) => ({
+  isLoading: false,
+  result: null,
+  error: null,
+  sourceLang: 'pt-BR',
+  targetLang: 'en-US',
+  analyze: async (text) => {
+    set({ isLoading: true, error: null })
+    try {
+      const result = await api.translate(text, get().sourceLang, get().targetLang)
+      set({ result, isLoading: false })
+    } catch (err) {
+      set({ error: 'Erro ao analisar o texto', isLoading: false })
+    }
+  },
+  setLanguages: (source, target) => set({ sourceLang: source, targetLang: target }),
+  reset: () => set({ result: null, error: null }),
+}))
+```
+
+### Monitor de clipboard
+```typescript
+// main/clipboard/monitor.ts
+import { clipboard } from 'electron'
+
+let lastText = ''
+
+export function startClipboardMonitor(
+  onchange: (text: string) => void,
+  interval = 500
+): NodeJS.Timeout {
+  return setInterval(() => {
+    const current = clipboard.readText()
+    if (current !== lastText && current.trim().length > 0) {
+      lastText = current
+      onchange(current)
+    }
+  }, interval)
+}
+```
+
+## Regras de UX
+
+- A janela deve aparecer próxima ao cursor do mouse quando um texto é detectado
+- Sempre mostrar um skeleton loader enquanto aguarda resposta do backend
+- Timeout de 15 segundos — se o backend não responder, mostrar erro amigável
+- Botão de copiar em cada sugestão alternativa
+- Atalho de teclado global (ex: Ctrl+Shift+T) para abrir/fechar o painel
+- A janela nunca deve bloquear o foco da janela que o usuário está usando
+
+## Regras de Segurança Electron
+
+- `nodeIntegration` sempre `false`
+- `contextIsolation` sempre `true`
+- Toda comunicação Main↔Renderer via `contextBridge` no preload
+- Nunca exponha APIs do Node diretamente ao renderer
+- Valide e sanitize qualquer texto vindo do clipboard antes de enviar ao backend
+
+## O que este agente NÃO faz
+- Não gera código do backend FastAPI — use o agente de Backend
+- Não escreve prompts para a LLM — use o agente de Prompt Engineering
+- Não gera Dockerfile ou configuração GCP — use o agente de Infra

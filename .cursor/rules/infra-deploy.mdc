@@ -1,0 +1,273 @@
+---
+description: Agente responsável pela infraestrutura, containerização e deploy no GCP (Cloud Run, Firestore, API Gateway)
+globs: ["**/Dockerfile", "**/docker-compose*.yml", "**/.github/workflows/*.yml", "**/cloudbuild.yaml", "**/terraform/**", "**/*.sh"]
+alwaysApply: false
+---
+
+# Agente — Infra e Deploy (GCP + Docker)
+
+## Contexto do Projeto
+App de tradução com backend FastAPI hospedado no GCP Cloud Run.
+Toda a infraestrutura usa free tier do GCP sempre que possível.
+O deploy é feito via Cloud Build (CI/CD) acionado por push no GitHub.
+
+## Stack de Infraestrutura
+- **Container:** Docker com imagem base Python 3.11-slim
+- **Registry:** Google Artifact Registry
+- **Compute:** GCP Cloud Run (serverless, escala para zero)
+- **Banco:** Firestore (NoSQL, free tier permanente)
+- **Auth:** GCP Identity Platform
+- **API Gateway:** Cloud API Gateway (free tier: 2M chamadas/mês)
+- **CI/CD:** Cloud Build + GitHub trigger
+- **Secrets:** GCP Secret Manager
+- **Observabilidade:** Cloud Logging + Cloud Monitoring + Cloud Trace
+
+## Estrutura de Pastas de Infra
+```
+infra/
+├── docker/
+│   ├── Dockerfile                   # imagem do backend
+│   └── docker-compose.yml           # ambiente local de desenvolvimento
+├── gcp/
+│   ├── cloudrun.yaml                # configuração do serviço Cloud Run
+│   ├── apigateway.yaml              # spec OpenAPI para o API Gateway
+│   └── cloudbuild.yaml              # pipeline de CI/CD
+├── scripts/
+│   ├── setup-gcp.sh                 # setup inicial do projeto GCP
+│   └── deploy.sh                    # deploy manual via gcloud CLI
+└── .github/
+    └── workflows/
+        └── deploy.yml               # trigger GitHub Actions → Cloud Build
+```
+
+## Dockerfile do Backend
+```dockerfile
+# backend/Dockerfile
+FROM python:3.11-slim AS base
+
+# segurança: não rode como root
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+
+WORKDIR /app
+
+# instala dependências primeiro (cache de layer do Docker)
+COPY pyproject.toml poetry.lock ./
+RUN pip install --no-cache-dir poetry && \
+    poetry config virtualenvs.create false && \
+    poetry install --only main --no-interaction --no-ansi
+
+# copia o código da aplicação
+COPY app/ ./app/
+
+# muda para usuário não-root
+USER appuser
+
+# Cloud Run usa a variável PORT
+ENV PORT=8080
+EXPOSE 8080
+
+# health check para o Cloud Run
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+```
+
+## Docker Compose — Desenvolvimento Local
+```yaml
+# infra/docker/docker-compose.yml
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: ../infra/docker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=development
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+    volumes:
+      - ../../backend/app:/app/app   # hot reload em dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+
+  # emulador local do Firestore para desenvolvimento sem custo
+  firestore-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8081
+    ports:
+      - "8081:8081"
+```
+
+## Configuração do Cloud Run
+```yaml
+# infra/gcp/cloudrun.yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: translation-backend
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"   # escala para zero — free tier
+        autoscaling.knative.dev/maxScale: "10"  # limite para controlar custo
+        run.googleapis.com/cpu-throttling: "true"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 30
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/translation/backend:latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          env:
+            - name: ENVIRONMENT
+              value: production
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-api-key
+                  key: latest
+            - name: GCP_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: gcp-project-id
+                  key: latest
+```
+
+## Pipeline CI/CD — Cloud Build
+```yaml
+# infra/gcp/cloudbuild.yaml
+steps:
+  # 1. testes unitários
+  - name: 'python:3.11-slim'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        pip install poetry &&
+        poetry install &&
+        poetry run pytest tests/ -v
+
+  # 2. build da imagem Docker
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - -t
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/translation/backend:${SHORT_SHA}'
+      - -t
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/translation/backend:latest'
+      - -f
+      - backend/Dockerfile
+      - backend/
+
+  # 3. push para o Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/translation/backend'
+
+  # 4. deploy no Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - run
+      - deploy
+      - translation-backend
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/translation/backend:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated=false
+
+substitutions:
+  _REGION: us-central1
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+```
+
+## Script de Setup Inicial do GCP
+```bash
+#!/bin/bash
+# infra/scripts/setup-gcp.sh
+# Execute uma vez para configurar o projeto GCP do zero
+
+set -e
+
+PROJECT_ID=$1
+REGION="us-central1"
+
+echo "→ Configurando projeto: $PROJECT_ID"
+
+# habilita APIs necessárias
+gcloud services enable \
+  run.googleapis.com \
+  firestore.googleapis.com \
+  secretmanager.googleapis.com \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com \
+  apigateway.googleapis.com \
+  --project=$PROJECT_ID
+
+# cria Artifact Registry
+gcloud artifacts repositories create translation \
+  --repository-format=docker \
+  --location=$REGION \
+  --project=$PROJECT_ID
+
+# cria banco Firestore em modo nativo
+gcloud firestore databases create \
+  --location=$REGION \
+  --project=$PROJECT_ID
+
+# cria secrets (você preenche os valores depois)
+echo "PLACEHOLDER" | gcloud secrets create anthropic-api-key \
+  --data-file=- \
+  --project=$PROJECT_ID
+
+echo "✓ Setup concluído. Preencha os secrets no Secret Manager antes de fazer deploy."
+```
+
+## Regras de Infraestrutura
+
+- **Nunca commite secrets** — use sempre o Secret Manager e referencie via env no Cloud Run
+- **Sempre use `.dockerignore`** — exclua `.env`, `__pycache__`, `.git`, `tests/`
+- **Imagem base slim** — use `python:3.11-slim`, nunca a imagem completa
+- **Usuário não-root no Docker** — crie um usuário de sistema para rodar a app
+- **minScale: 0** sempre — garante custo zero quando sem tráfego
+- **maxScale: 10** como limite padrão — evite surpresas na fatura
+- **Sempre rode testes antes do build** no pipeline CI/CD
+- **Tags de imagem com SHORT_SHA** — permite rollback por versão específica
+
+## Variáveis de Ambiente Necessárias
+
+| Variável | Onde configurar | Descrição |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Secret Manager | Chave da API Anthropic |
+| `GCP_PROJECT_ID` | Secret Manager | ID do projeto GCP |
+| `ENVIRONMENT` | Cloud Run env var | `development` ou `production` |
+| `FIRESTORE_EMULATOR_HOST` | docker-compose local | Aponta para emulador local |
+
+## Estimativa de Custo Mensal (uso pessoal)
+
+| Serviço | Uso estimado | Custo |
+|---|---|---|
+| Cloud Run | < 2M requests | $0 (free tier) |
+| Firestore | < 50k reads/dia | $0 (free tier) |
+| Cloud API Gateway | < 2M calls/mês | $0 (free tier) |
+| Artifact Registry | < 500MB | $0 (free tier) |
+| Cloud Build | < 120 min/dia | $0 (free tier) |
+| Secret Manager | < 6 secrets | $0 (free tier) |
+| **Anthropic API** | ~500 traduções/mês | **~$2-5/mês** |
+| **TOTAL** | | **~$2-5/mês** |
+
+## O que este agente NÃO faz
+- Não gera código da aplicação FastAPI — use o agente de Backend
+- Não gera código do app Electron — use o agente de Frontend
+- Não escreve prompts para a LLM — use o agente de Prompt Engineering
