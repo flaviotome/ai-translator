@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  -webkit-user-select: none;
+  user-select: text;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+.drag-region button,
+.drag-region input,
+.drag-region textarea {
+  -webkit-app-region: no-drag;
+}
