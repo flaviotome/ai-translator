@@ -1,8 +1,11 @@
+import logging
 import re
 from functools import lru_cache
 from importlib import import_module
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, field_validator
 
 from config import LLM_PROVIDER, LLM_REGISTRY
@@ -46,7 +49,8 @@ async def translate(
 
     try:
         translated = await service.translate(request.text, request.source_lang, request.target_lang)
-    except Exception:
+    except Exception as e:
+        print(f"[LLM ERROR] {type(e).__name__}: {e}", flush=True)
         raise HTTPException(status_code=502, detail="LLM service unavailable")
 
     return TranslateResponse(translated_text=translated)
