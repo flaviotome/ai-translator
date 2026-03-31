@@ -28,6 +28,9 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v
         working-directory: backend
+        env:
+          GEMINI_API_KEY: dummy-key-for-tests
+          LLM_PROVIDER: gemini
 
   frontend-build:
     name: Frontend build check
