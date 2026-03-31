@@ -35,26 +35,49 @@
 ### M2 — Frontend v1
 > Goal: Electron + React floating window that captures typing and shows translation.
 
-- [ ] Electron app scaffold (Vite + React + TypeScript + Tailwind)
-- [ ] Floating transparent window (420×280, always-on-top, frameless)
-- [ ] `preload.js` with `contextBridge` (no direct ipcRenderer in renderer)
-- [ ] `TranslatorBox` component (text input + translation output)
-- [ ] `LanguageToggle` component (EN ↔ PT)
-- [ ] `useTranslate` hook (debounced API call, 500ms)
-- [ ] HTTP client (`api/translate.js`) calling `http://localhost:8000/translate`
-- [ ] Loading state while waiting for backend
-- [ ] Error state (backend unreachable or timeout)
+- [x] Electron app scaffold (Vite + React + JavaScript + Tailwind)
+- [x] Floating transparent window (420×280, always-on-top, frameless)
+- [x] `preload.js` with `contextBridge` (no direct ipcRenderer in renderer)
+- [x] `TranslatorBox` component (text input + translation output)
+- [x] `LanguageToggle` component (EN ↔ PT)
+- [x] `useTranslate` hook (debounced API call, 500ms)
+- [x] HTTP client (`api/translate.js`) calling `http://localhost:8000/translate`
+- [x] Loading state while waiting for backend
+- [x] Error state (backend unreachable or timeout)
 
 ---
 
 ### M3 — Integration & Polish
 > Goal: both components running together seamlessly.
 
-- [ ] End-to-end test: type in Electron → translation appears
-- [ ] Handle backend cold start (first request may be slow)
-- [ ] Window positioning near cursor
-- [ ] Keyboard shortcut to show/hide panel (Ctrl+Shift+T)
-- [ ] Graceful error messages (network down, API key invalid, etc.)
+- [x] End-to-end test: type in Electron → translation appears (verified manually)
+- [x] Handle backend cold start — health check on mount, yellow dot + banner if backend is down
+- [x] Window positioning near cursor — `getWindowPosition()` in `electron/main.js`
+- [x] Keyboard shortcut to show/hide panel (`Ctrl+Shift+T`) — `globalShortcut` in `electron/main.js`
+- [x] Graceful error messages — network unreachable, 502/API key error, timeout all have distinct messages
+
+---
+
+### M4 — CI/CD & Deploy
+> Goal: automated pipeline that tests, builds and deploys the backend to GCP Cloud Run and packages the desktop app for distribution.
+
+#### Completed
+- [x] GitHub Actions — `ci.yml`: backend pytest + Vite build check on every push/PR
+- [x] GitHub Actions — `deploy-backend.yml`: build Docker image → Artifact Registry → Cloud Run on push to master
+- [x] GitHub Actions — `build-desktop.yml`: build Windows NSIS installer and create GitHub Release on version tag
+- [x] `infra/docker/Dockerfile` — Python 3.11-slim, non-root user, configurable PORT
+- [x] `infra/docker/docker-compose.yml` — local containerized dev environment
+- [x] `infra/gcp/cloudrun.yaml` — Cloud Run service config (minScale 0, Secret Manager integration)
+- [x] `infra/gcp/cloudbuild.yaml` — Cloud Build pipeline as alternative to GitHub Actions
+- [x] `infra/scripts/setup-gcp.sh` — one-time GCP bootstrap script
+- [x] `VITE_BACKEND_URL` env var — frontend backend URL configurable at build time
+- [x] `electron-builder` — NSIS Windows installer packaging
+
+#### To do
+- [ ] **Configure GitHub Secrets** — add `GCP_PROJECT_ID`, `GCP_SA_KEY`, `GCP_REGION` and `PRODUCTION_BACKEND_URL` to the repository secrets on GitHub (`Settings → Secrets and variables → Actions`)
+- [ ] **Bootstrap GCP project** — run `bash infra/scripts/setup-gcp.sh <PROJECT_ID>`, add real `GEMINI_API_KEY` to Secret Manager, copy `sa-key.json` to GitHub Secrets then delete locally
+- [ ] **First backend deploy to Cloud Run** — merge to `master` to trigger `deploy-backend.yml`; verify the service URL is reachable via `/health`
+- [ ] **Configure frontend deploy** — add `PRODUCTION_BACKEND_URL` GitHub Secret with the Cloud Run URL; push a version tag (`git tag v1.0.0 && git push --tags`) to trigger the Windows installer build and GitHub Release
 
 ---
 
