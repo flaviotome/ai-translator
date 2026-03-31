@@ -1,15 +1,16 @@
 const BACKEND_URL = 'http://localhost:8001'
 
-export async function translateText(text, sourceLang, targetLang) {
+export async function translateText(text, sourceLang, targetLang, signal) {
   let response
   try {
     response = await fetch(`${BACKEND_URL}/translate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, source_lang: sourceLang, target_lang: targetLang }),
-      signal: AbortSignal.timeout(15000),
+      signal: signal ?? AbortSignal.timeout(15000),
     })
   } catch (err) {
+    if (err.name === 'AbortError') throw err
     if (err.name === 'TimeoutError') throw err
     throw new Error('Backend is not reachable. Make sure it is running.')
   }
