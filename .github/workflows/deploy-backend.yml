@@ -35,6 +35,9 @@ jobs:
           pip install -r requirements.txt pytest httpx
           pytest tests/ -v
         working-directory: backend
+        env:
+          GEMINI_API_KEY: dummy-key-for-tests
+          LLM_PROVIDER: gemini
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
