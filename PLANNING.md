@@ -93,37 +93,37 @@
 
 #### To do
 
-- [ ] **Settings panel** — slide-in panel acessível por ícone de engrenagem
-  - [ ] Campo para inserir API Key — salva via Electron `safeStorage` (criptografado no disco)
-  - [ ] Teste de validade da key em background ao salvar
-  - [ ] Lista de modelos disponíveis com indicação de custo/velocidade (Gemini Flash, Gemini Pro, GPT-4o…)
-  - [ ] Backend passa a usar o modelo e a key enviados pelo frontend no corpo da requisição
-- [ ] **Copiar com um clique** — botão no output que copia a tradução para o clipboard (`navigator.clipboard`)
+- [ ] **Settings panel** — slide-in panel accessible via gear icon
+  - [ ] API Key input field — saved via Electron `safeStorage` (encrypted on disk)
+  - [ ] Key validity check in background on save
+  - [ ] Available models list with cost/speed indicators (Gemini Flash, Gemini Pro, GPT-4o…)
+  - [ ] Backend uses the model and key sent by the frontend in the request body
+- [ ] **Copy with one click** — button on the output field that copies the translation to clipboard (`navigator.clipboard`)
 - [ ] **Light / Dark mode**
-  - [ ] Toggle manual nas settings
-  - [ ] Opção "seguir o sistema" via `prefers-color-scheme`
-  - [ ] Preferência persistida no `localStorage`
+  - [ ] Manual toggle in settings
+  - [ ] "Follow system" option via `prefers-color-scheme`
+  - [ ] Preference persisted in `localStorage`
 
 ---
 
 ## Backlog
 
-> Ideias validadas mas sem milestone definido. Priorizar quando M5 estiver concluído.
+> Validated ideas without a defined milestone. Prioritize once M5 is complete.
 
-| Ideia | Descrição |
-|-------|-----------|
-| Detecção automática de idioma | Inferir o idioma de origem sem seleção manual |
-| Histórico de traduções | Painel com últimas N traduções da sessão, clicável para reutilizar |
-| Auto-update | `electron-updater` verifica novas versões no GitHub Releases e instala silenciosamente |
-| Tom / formalidade | Opção "formal / neutro / informal" injetada no prompt de tradução |
-| Swap de texto | Trocar conteúdo dos campos além de trocar o idioma |
-| Opacidade ajustável | Slider nas settings para controlar a transparência da janela |
-| Tradução por seleção | Detectar texto selecionado na área de transferência e auto-preencher o input |
-| Modo compacto | Janela menor exibindo só o output |
-| Retradução | Traduzir o output de volta ao idioma original como verificação de qualidade |
-| Glossário pessoal | Termos que não devem ser traduzidos ou com tradução fixa |
-| Backend embutido | Empacotar FastAPI com PyInstaller dentro do Electron — sem dependência de servidor externo |
-| Telemetria opt-in | Contagem de uso sem enviar conteúdo traduzido |
+| Idea | Description |
+|------|-------------|
+| Automatic language detection | Infer the source language without manual selection |
+| Translation history | Side panel with the last N translations of the session, clickable to reuse |
+| Auto-update | `electron-updater` checks for new versions on GitHub Releases and installs silently |
+| Tone / formality | "Formal / neutral / informal" option injected into the translation prompt |
+| Text swap | Swap field contents in addition to switching the language direction |
+| Adjustable opacity | Slider in settings to control window transparency |
+| Translate from selection | Detect selected text in clipboard and auto-fill the input |
+| Compact mode | Smaller window showing only the output |
+| Back-translation | Translate the output back to the source language as a quality check |
+| Personal glossary | Terms that must not be translated or must always use a specific translation |
+| Embedded backend | Package FastAPI with PyInstaller inside Electron — no external server dependency |
+| Opt-in telemetry | Usage count without sending any translated content |
 
 ---
 
