@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"$HOME/.claude/skills/llm-api-caller-skill\")",
+      "Bash(mv \"$HOME/.claude/skills/SKILL.md\" \"$HOME/.claude/skills/references\" \"$HOME/.claude/skills/llm-api-caller-skill/\")",
+      "Bash(echo:*)",
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(.venv/Scripts/pytest tests/ -v)",
+      "Bash(npm -v)",
+      "Bash(npx -v)",
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl:*)"
+    ]
+  }
+}

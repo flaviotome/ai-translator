@@ -1,0 +1,14 @@
+{
+  "name": "ai-translator",
+  "scripts": {
+    "dev": "concurrently -n backend,vite,electron -c blue,green,yellow \"npm run dev:backend\" \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:backend": "cd backend && .venv\\Scripts\\uvicorn.exe main:app --reload",
+    "dev:vite": "cd frontend && npx vite --port 5173 --strictPort",
+    "dev:electron": "wait-on http-get://localhost:5173 && wait-on http-get://localhost:8000/health && cd frontend && cross-env NODE_ENV=development npx electron ."
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "wait-on": "^8.0.1"
+  }
+}

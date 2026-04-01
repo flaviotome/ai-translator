@@ -83,8 +83,8 @@
 
 #### To do
 - [ ] Add real `GEMINI_API_KEY` value to GCP Secret Manager (replace placeholder)
-- [ ] Push version tag (`git tag v1.0.0 && git push --tags`) to trigger Windows installer build
-- [ ] Verify GitHub Release with `.exe` installer is created after tag push
+- [x] Push version tag (`git tag v1.0.0 && git push --tags`) to trigger Windows installer build
+- [x] GitHub Release `v1.0.0` published — `AI.Translator.Setup.1.0.0.exe` (82 MB) available at https://github.com/flaviotome/ai-translator/releases/tag/v1.0.0
 
 ---
 
