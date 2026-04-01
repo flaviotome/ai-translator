@@ -88,6 +88,45 @@
 
 ---
 
+### M5 — UX Improvements
+> Goal: settings panel with API key + model selector, copy button, and light/dark mode.
+
+#### To do
+
+- [ ] **Settings panel** — slide-in panel acessível por ícone de engrenagem
+  - [ ] Campo para inserir API Key — salva via Electron `safeStorage` (criptografado no disco)
+  - [ ] Teste de validade da key em background ao salvar
+  - [ ] Lista de modelos disponíveis com indicação de custo/velocidade (Gemini Flash, Gemini Pro, GPT-4o…)
+  - [ ] Backend passa a usar o modelo e a key enviados pelo frontend no corpo da requisição
+- [ ] **Copiar com um clique** — botão no output que copia a tradução para o clipboard (`navigator.clipboard`)
+- [ ] **Light / Dark mode**
+  - [ ] Toggle manual nas settings
+  - [ ] Opção "seguir o sistema" via `prefers-color-scheme`
+  - [ ] Preferência persistida no `localStorage`
+
+---
+
+## Backlog
+
+> Ideias validadas mas sem milestone definido. Priorizar quando M5 estiver concluído.
+
+| Ideia | Descrição |
+|-------|-----------|
+| Detecção automática de idioma | Inferir o idioma de origem sem seleção manual |
+| Histórico de traduções | Painel com últimas N traduções da sessão, clicável para reutilizar |
+| Auto-update | `electron-updater` verifica novas versões no GitHub Releases e instala silenciosamente |
+| Tom / formalidade | Opção "formal / neutro / informal" injetada no prompt de tradução |
+| Swap de texto | Trocar conteúdo dos campos além de trocar o idioma |
+| Opacidade ajustável | Slider nas settings para controlar a transparência da janela |
+| Tradução por seleção | Detectar texto selecionado na área de transferência e auto-preencher o input |
+| Modo compacto | Janela menor exibindo só o output |
+| Retradução | Traduzir o output de volta ao idioma original como verificação de qualidade |
+| Glossário pessoal | Termos que não devem ser traduzidos ou com tradução fixa |
+| Backend embutido | Empacotar FastAPI com PyInstaller dentro do Electron — sem dependência de servidor externo |
+| Telemetria opt-in | Contagem de uso sem enviar conteúdo traduzido |
+
+---
+
 ## Decisions Log
 
 | Date | Decision | Reason |
