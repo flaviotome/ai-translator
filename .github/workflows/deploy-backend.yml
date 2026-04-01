@@ -19,6 +19,7 @@ jobs:
   deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
+    environment: .env
 
     steps:
       - uses: actions/checkout@v4
