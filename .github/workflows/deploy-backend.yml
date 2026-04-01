@@ -68,6 +68,7 @@ jobs:
             --region=${{ env.REGION }} \
             --platform=managed \
             --allow-unauthenticated \
+            --service-account=ai-translator-deploy@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
             --set-secrets=GEMINI_API_KEY=gemini-api-key:latest \
             --set-env-vars=LLM_PROVIDER=gemini \
             --project=${{ env.PROJECT_ID }}
