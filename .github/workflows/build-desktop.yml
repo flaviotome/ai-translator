@@ -25,11 +25,12 @@ jobs:
         working-directory: frontend
 
       - name: Build Vite + Electron
-        run: npm run package
+        run: |
+          npx vite build
+          npx electron-builder --publish=never
         working-directory: frontend
         env:
           VITE_BACKEND_URL: ${{ secrets.PRODUCTION_BACKEND_URL }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
